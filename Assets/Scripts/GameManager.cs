@@ -21,9 +21,9 @@ public class GameManager : MonoBehaviour
     [Serializable]
     public class Level {
         public Cell[][] board;
-        public Cell[] targets;
+        public Cell[][] targets;
 
-        public Level(Cell[][] board, Cell[] targets) {
+        public Level(Cell[][] board, Cell[][] targets) {
             this.board = board;
             this.targets = targets;
         }
@@ -165,6 +165,7 @@ public class GameManager : MonoBehaviour
         public int width;
         public int height;
         public int[][] cells;
+        public int[][] externalCells;
     }
 
     #endregion
@@ -172,6 +173,7 @@ public class GameManager : MonoBehaviour
     #region rendering
     public Dictionary<CellType, TileBase> tiles;
     public TileBase backgroundTile;
+
 
 
     #endregion
