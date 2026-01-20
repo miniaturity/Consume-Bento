@@ -1,9 +1,13 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Tilemaps;
 using System;
 public class GameManager : MonoBehaviour
 {
+    public bool hasWon = false;
+    public Level level;
+
     #region cell behavior
 
     public enum CellType {
@@ -155,8 +159,7 @@ public class GameManager : MonoBehaviour
     #endregion
 
     #region load level data
-    public Level level;
-
+    
     [Serializable]
     public class LevelData {
         public int width;
@@ -164,6 +167,11 @@ public class GameManager : MonoBehaviour
         public int[][] cells;
     }
 
+    #endregion
+
+    #region rendering
+    public Dictionary<CellType, TileBase> tiles;
+    public TileBase backgroundTile;
 
 
     #endregion
