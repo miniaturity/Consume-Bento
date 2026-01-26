@@ -1,103 +1,137 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 using CellLocation = GameManager.CellLocation;
-using Level = GameManager.Level;
 
 
 public class GameController : MonoBehaviour
 {
     public Grid bentoGrid;
     public Tilemap contents;
-    public Level level;
+    public Tilemap background;
+    public Vector2Int contentsOffset = new Vector2Int(1, 1);
+
+    private gm gm;
+    private LevelRenderer renderer;
 
     private CellLocation? selectedCell = null;
     private CellLocation dragOrigin;
+    private TargetPieceObject draggedTargetPiece;
+    private Vector3 externalStartPosition;
 
-    ExternalItem draggedExternalFood;
-    Vector3 externalStartPosition;
+    private enum InputMode
+    {
+        None,
+        DraggingFood,
+        DraggingTarget
+    }
 
-    public Vector2Int contentsOffset = new Vector2Int(1, 1); // padding
+    private InputMode currentMode = InputMode.None;
+
+    void Awake()
+    {
+        gm = GetComponent<gm>();
+        renderer = GetComponent<LevelRenderer>();
+    }
 
     void Update()
     {
-        HandleMouse();
-        HandleKeyboardMovement();
+        if (gm.level == null) return;
 
-        HandleExternalDragging();
+        if (currentMode == InputMode.DraggingTarget)
+        {
+            HandleTargetDragging();
+        }
+        else if (currentMode == InputMode.None)
+        {
+            HandleMouse();
+            HandleKeyboardMovement();
+        }
     }
 
-    #region input
-    void HandleMouse() {
-        if (Input.GetMouseButtonDown(0)) {
+    #region food mvmnt
+    void HandleMouse()
+    {
+        if (Input.GetMouseButtonDown(0))
+        {
             var cell = MouseToCell();
-            if (cell != null && level.board[cell.Value.x][cell.Value.y].filled) {
+            if (cell != null && gm.level.board[cell.Value.x][cell.Value.y].filled)
+            {
                 selectedCell = cell;
                 dragOrigin = cell.Value;
+                currentMode = InputMode.DraggingFood;
             }
         }
 
-        if (Input.GetMouseButtonUp(0) && selectedCell != null) {
-            var release = MouseToCell();
-            if (release != null)
-                level.MoveCellGroup(dragOrigin, release.Value);
+        if (Input.GetMouseButtonDown(1))
+        {
+            var cell = MouseToCell();
+            if (cell != null)
+            {
+                gm.level.ConsumeCell(cell.Value);
+                renderer.RenderLevel();
+            }
+        }
 
-            selectedCell = null;
+        if (Input.GetMouseButtonUp(0) && currentMode == InputMode.DraggingFood)
+        {
+            if (selectedCell != null)
+            {
+                var release = MouseToCell();
+                if (release != null && gm.level.MoveCellGroup(dragOrigin, release.Value))
+                {
+                    renderer.RenderLevel();
+                }
+                selectedCell = null;
+            }
+            currentMode = InputMode.None;
         }
     }
 
-
-    void HandleKeyboardMovement() {
+    void HandleKeyboardMovement()
+    {
         if (selectedCell == null) return;
 
         int dx = 0, dy = 0;
 
         if (Input.GetKeyDown(KeyCode.W)) dy = 1;
-        if (Input.GetKeyDown(KeyCode.S  )) dy = -1;
+        if (Input.GetKeyDown(KeyCode.S)) dy = -1;
         if (Input.GetKeyDown(KeyCode.A)) dx = -1;
         if (Input.GetKeyDown(KeyCode.D)) dx = 1;
 
-        if (dx != 0 || dy != 0) {
+        if (dx != 0 || dy != 0)
+        {
             CellLocation from = selectedCell.Value;
-            CellLocation to = new CellLocation {
+            CellLocation to = new CellLocation
+            {
                 x = from.x + dx,
                 y = from.y + dy
             };
 
-            level.MoveCellGroup(from, to);
+            if (gm.level.MoveCellGroup(from, to))
+            {
+                selectedCell = to;
+                renderer.RenderLevel();
+            }
         }
-    }
-
-    CellLocation? MouseToCell() {
-        Vector3 world = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-
-        Vector3Int cell = bentoGrid.WorldToCell(world);
-
-        cell.x -= 1;
-        cell.y -= 1; // starts at (1, 1) so i have to normalize
-
-
-
-        CellLocation l = new CellLocation { x = cell.x, y = cell.y };
-
-        return level.ValidLocation(l) ? l : null;
     }
     #endregion
 
-    #region external input
-
-    public void BeginExternalDrag(ExternalItem food) {
-        draggedExternalFood = food;
-        externalStartPosition = food.transform.position;
+    #region dragging
+    public void BeginTargetDrag(TargetPieceObject piece)
+    {
+        draggedTargetPiece = piece;
+        externalStartPosition = piece.transform.position;
+        currentMode = InputMode.DraggingTarget;
     }
 
-    void HandleExternalDragging() {
-        if (draggedExternalFood == null) return;
+    void HandleTargetDragging()
+    {
+        if (draggedTargetPiece == null) return;
 
         var cell = MouseToCell();
 
-        if (cell != null) {
+        if (cell != null)
+        {
             Vector3Int tilePos = new Vector3Int(
                 cell.Value.x + contentsOffset.x,
                 cell.Value.y + contentsOffset.y,
@@ -105,58 +139,89 @@ public class GameController : MonoBehaviour
             );
 
             Vector3 snap = contents.CellToWorld(tilePos);
-            draggedExternalFood.transform.position = snap;
+            draggedTargetPiece.transform.position = snap;
         }
-        else {
+        else
+        {
             Vector3 world = Camera.main.ScreenToWorldPoint(Input.mousePosition);
             world.z = 0;
-            draggedExternalFood.transform.position = world;
+            draggedTargetPiece.transform.position = world;
         }
     }
 
-    public void EndExternalDrag() {
-        if (draggedExternalFood == null) return;
+    public void EndTargetDrag()
+    {
+        if (draggedTargetPiece == null) return;
 
         var cell = MouseToCell();
 
-        if (cell != null && CanPlaceExternalFood(cell.Value, draggedExternalFood)) {
-            PlaceExternalFood(cell.Value, draggedExternalFood);
-            draggedExternalFood = null;
+        if (cell != null && CanPlaceTargetPiece(cell.Value, draggedTargetPiece))
+        {
+            PlaceTargetPiece(cell.Value, draggedTargetPiece);
+            Destroy(draggedTargetPiece.gameObject);
+            renderer.RenderLevel();
         }
-        else {
-            draggedExternalFood.transform.position = externalStartPosition;
-            draggedExternalFood = null;
+        else
+        {
+            draggedTargetPiece.transform.position = externalStartPosition;
         }
+
+        draggedTargetPiece = null;
+        currentMode = InputMode.None;
     }
 
-    bool CanPlaceExternalFood(CellLocation origin, ExternalItem food) {
-        foreach (var offset in food.shape) {
-            var target = new CellLocation {
-                x = origin.x + offset.x,
-                y = origin.y + offset.y
+    bool CanPlaceTargetPiece(CellLocation origin, TargetPieceObject piece)
+    {
+        CellLocation[] filledCells = piece.targetPiece.GetFilledCells();
+        
+        foreach (var cell in filledCells)
+        {
+            var target = new CellLocation
+            {
+                x = origin.x + cell.x,
+                y = origin.y + cell.y
             };
 
-            if (!level.ValidLocation(target)) return false;
-            if (level.board[target.x][target.y].filled) return false;
+            if (!gm.level.ValidLocation(target)) return false;
+            if (gm.level.board[target.x][target.y].filled) return false;
         }
 
         return true;
     }
 
-    void PlaceExternalFood(CellLocation origin, ExternalItem food) {
-        foreach (var offset in food.shape) {
-            var cell = new CellLocation {
-                x = origin.x + offset.x,
-                y = origin.y + offset.y
+    void PlaceTargetPiece(CellLocation origin, TargetPieceObject piece)
+    {
+        CellLocation[] filledCells = piece.targetPiece.GetFilledCells();
+        
+        foreach (var cell in filledCells)
+        {
+            var boardCell = new CellLocation
+            {
+                x = origin.x + cell.x,
+                y = origin.y + cell.y
             };
 
-            level.board[cell.x][cell.y].type = food.type;
-            level.board[cell.x][cell.y].filled = true;
+            CellType type = piece.targetPiece.GetTypeAt(cell.x, cell.y);
+            gm.level.board[boardCell.x][boardCell.y].type = type;
+            gm.level.board[boardCell.x][boardCell.y].filled = true;
         }
 
-        Destroy(food.gameObject);
+        piece.targetPiece.placed = true;
     }
+    #endregion
 
+    #region Utility
+    CellLocation? MouseToCell()
+    {
+        Vector3 world = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        Vector3Int cell = bentoGrid.WorldToCell(world);
 
+        cell.x -= contentsOffset.x;
+        cell.y -= contentsOffset.y;
+
+        CellLocation l = new CellLocation { x = cell.x, y = cell.y };
+
+        return gm.level.ValidLocation(l) ? l : null;
+    }
     #endregion
 }
