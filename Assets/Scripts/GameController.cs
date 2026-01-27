@@ -1,25 +1,22 @@
 using UnityEngine;
 using UnityEngine.Tilemaps;
 using CellLocation = GameManager.CellLocation;
+using CellType = GameManager.CellType;
 
-
-public class GameController : MonoBehaviour
-{
+public class GameController : MonoBehaviour {
     public Grid bentoGrid;
     public Tilemap contents;
-    public Tilemap background;
     public Vector2Int contentsOffset = new Vector2Int(1, 1);
 
-    private gm gm;
-    private LevelRenderer renderer;
+    private GameManager gm;
+    private LevelRenderer levelRenderer;
 
     private CellLocation? selectedCell = null;
     private CellLocation dragOrigin;
     private TargetPieceObject draggedTargetPiece;
     private Vector3 externalStartPosition;
 
-    private enum InputMode
-    {
+    private enum InputMode {
         None,
         DraggingFood,
         DraggingTarget
@@ -27,59 +24,47 @@ public class GameController : MonoBehaviour
 
     private InputMode currentMode = InputMode.None;
 
-    void Awake()
-    {
-        gm = GetComponent<gm>();
-        renderer = GetComponent<LevelRenderer>();
+    void Awake() {
+        gm = GetComponent<GameManager>();
+        levelRenderer = GetComponent<LevelRenderer>();
     }
 
-    void Update()
-    {
+    void Update() {
         if (gm.level == null) return;
 
-        if (currentMode == InputMode.DraggingTarget)
-        {
+        if (currentMode == InputMode.DraggingTarget) {
             HandleTargetDragging();
         }
-        else if (currentMode == InputMode.None)
-        {
+        else if (currentMode == InputMode.None) {
             HandleMouse();
             HandleKeyboardMovement();
         }
     }
 
     #region food mvmnt
-    void HandleMouse()
-    {
-        if (Input.GetMouseButtonDown(0))
-        {
+    void HandleMouse() {
+        if (Input.GetMouseButtonDown(0)) {
             var cell = MouseToCell();
-            if (cell != null && gm.level.board[cell.Value.x][cell.Value.y].filled)
-            {
+            if (cell != null && gm.level.board[cell.Value.x][cell.Value.y].filled) {
                 selectedCell = cell;
                 dragOrigin = cell.Value;
                 currentMode = InputMode.DraggingFood;
             }
         }
 
-        if (Input.GetMouseButtonDown(1))
-        {
+        if (Input.GetMouseButtonDown(1)) {
             var cell = MouseToCell();
-            if (cell != null)
-            {
+            if (cell != null) {
                 gm.level.ConsumeCell(cell.Value);
-                renderer.RenderLevel();
+                levelRenderer.RenderLevel();
             }
         }
 
-        if (Input.GetMouseButtonUp(0) && currentMode == InputMode.DraggingFood)
-        {
-            if (selectedCell != null)
-            {
+        if (Input.GetMouseButtonUp(0) && currentMode == InputMode.DraggingFood) {
+            if (selectedCell != null) {
                 var release = MouseToCell();
-                if (release != null && gm.level.MoveCellGroup(dragOrigin, release.Value))
-                {
-                    renderer.RenderLevel();
+                if (release != null && gm.level.MoveCellGroup(dragOrigin, release.Value)) {
+                    levelRenderer.RenderLevel();
                 }
                 selectedCell = null;
             }
@@ -87,8 +72,7 @@ public class GameController : MonoBehaviour
         }
     }
 
-    void HandleKeyboardMovement()
-    {
+    void HandleKeyboardMovement() {
         if (selectedCell == null) return;
 
         int dx = 0, dy = 0;
@@ -98,40 +82,34 @@ public class GameController : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.A)) dx = -1;
         if (Input.GetKeyDown(KeyCode.D)) dx = 1;
 
-        if (dx != 0 || dy != 0)
-        {
+        if (dx != 0 || dy != 0) {
             CellLocation from = selectedCell.Value;
-            CellLocation to = new CellLocation
-            {
+            CellLocation to = new CellLocation {
                 x = from.x + dx,
                 y = from.y + dy
             };
 
-            if (gm.level.MoveCellGroup(from, to))
-            {
+            if (gm.level.MoveCellGroup(from, to)) {
                 selectedCell = to;
-                renderer.RenderLevel();
+                levelRenderer.RenderLevel();
             }
         }
     }
     #endregion
 
     #region dragging
-    public void BeginTargetDrag(TargetPieceObject piece)
-    {
+    public void BeginTargetDrag(TargetPieceObject piece) {
         draggedTargetPiece = piece;
         externalStartPosition = piece.transform.position;
         currentMode = InputMode.DraggingTarget;
     }
 
-    void HandleTargetDragging()
-    {
+    void HandleTargetDragging() {
         if (draggedTargetPiece == null) return;
 
         var cell = MouseToCell();
 
-        if (cell != null)
-        {
+        if (cell != null) {
             Vector3Int tilePos = new Vector3Int(
                 cell.Value.x + contentsOffset.x,
                 cell.Value.y + contentsOffset.y,
@@ -141,28 +119,24 @@ public class GameController : MonoBehaviour
             Vector3 snap = contents.CellToWorld(tilePos);
             draggedTargetPiece.transform.position = snap;
         }
-        else
-        {
+        else {
             Vector3 world = Camera.main.ScreenToWorldPoint(Input.mousePosition);
             world.z = 0;
             draggedTargetPiece.transform.position = world;
         }
     }
 
-    public void EndTargetDrag()
-    {
+    public void EndTargetDrag() {
         if (draggedTargetPiece == null) return;
 
         var cell = MouseToCell();
 
-        if (cell != null && CanPlaceTargetPiece(cell.Value, draggedTargetPiece))
-        {
+        if (cell != null && CanPlaceTargetPiece(cell.Value, draggedTargetPiece)) {
             PlaceTargetPiece(cell.Value, draggedTargetPiece);
             Destroy(draggedTargetPiece.gameObject);
-            renderer.RenderLevel();
+            levelRenderer.RenderLevel();
         }
-        else
-        {
+        else {
             draggedTargetPiece.transform.position = externalStartPosition;
         }
 
@@ -170,14 +144,11 @@ public class GameController : MonoBehaviour
         currentMode = InputMode.None;
     }
 
-    bool CanPlaceTargetPiece(CellLocation origin, TargetPieceObject piece)
-    {
+    bool CanPlaceTargetPiece(CellLocation origin, TargetPieceObject piece) {
         CellLocation[] filledCells = piece.targetPiece.GetFilledCells();
-        
-        foreach (var cell in filledCells)
-        {
-            var target = new CellLocation
-            {
+
+        foreach (var cell in filledCells) {
+            var target = new CellLocation {
                 x = origin.x + cell.x,
                 y = origin.y + cell.y
             };
@@ -189,14 +160,11 @@ public class GameController : MonoBehaviour
         return true;
     }
 
-    void PlaceTargetPiece(CellLocation origin, TargetPieceObject piece)
-    {
+    void PlaceTargetPiece(CellLocation origin, TargetPieceObject piece) {
         CellLocation[] filledCells = piece.targetPiece.GetFilledCells();
-        
-        foreach (var cell in filledCells)
-        {
-            var boardCell = new CellLocation
-            {
+
+        foreach (var cell in filledCells) {
+            var boardCell = new CellLocation {
                 x = origin.x + cell.x,
                 y = origin.y + cell.y
             };
@@ -211,8 +179,7 @@ public class GameController : MonoBehaviour
     #endregion
 
     #region Utility
-    CellLocation? MouseToCell()
-    {
+    CellLocation? MouseToCell() {
         Vector3 world = Camera.main.ScreenToWorldPoint(Input.mousePosition);
         Vector3Int cell = bentoGrid.WorldToCell(world);
 
